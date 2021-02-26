@@ -1,0 +1,465 @@
+---
+title: "Lab 1"
+author: "Hubert B. Majewski"
+output: pdf_document
+date: "11:59PM February 18, 2021"
+---
+
+You should have RStudio installed to edit this file. You will write code in places marked "TO-DO" to complete the problems. Some of this will be a pure programming assignment. The tools for the solutions to these problems can be found in the class practice lectures. I want you to use the methods I taught you, not for you to google and come up with whatever works. You won't learn that way.
+
+To "hand in" the homework, you should compile or publish this file into a PDF that includes output of your code. Once it's done, push by the deadline to your repository in a directory called "labs".
+
+* Print out the numerical constant pi with ten digits after the decimal point using the internal constant `pi`.
+
+```{r}
+options(digits = 11)
+pi
+```
+
+* Sum up the first 103 terms of the series 1 + 1/2 + 1/4 + 1/8 + ...
+
+```{r}
+sum(1/(2^(0:102)))
+```
+
+* Find the product of the first 37 terms in the sequence 1/3, 1/6, 1/9  ...
+
+```{r}
+prod(1/(seq(from=3, by=3, length.out=37)))
+```
+
+* Find the product of the first 387 terms of `1 * 1/2 * 1/4 * 1/8 *` ...
+
+```{r}
+prod(1/(2^(0:386)))
+```
+
+Is this answer *exactly* correct? 
+
+Experienced a numerical underflow. Eventually the computer multiplied a small number by a even smaller number
+
+* Figure out a means to express the answer more exactly. Not compute exactly, but express more exactly.
+
+```{r}
+sum(log(base=2, 1/2^(0:386)))
+```
+
+* Create the sequence `x = [Inf, 20, 18, ..., -20]`.
+
+```{r}
+x <- c(Inf, seq(from=20, by = -2, to=-20))
+
+```
+
+Create the sequence `x = [log_3(Inf), log_3(100), log_3(98), ... log_3(-20)]`.
+
+```{r}
+x <- c(Inf, seq(from=100, by = -2, to=-20))
+x <- log(base=3, x)
+```
+
+Comment on the appropriateness of the non-numeric values.
+
+Non numeric values occur when a function does not define an output for a given input. (i.e log(-1) = NA)
+
+* Create a vector of booleans where the entry is true if `x[i]` is positive and finite.
+
+```{r}
+y <- x[is.finite(x) & !is.nan(x) & x > 0]
+```
+
+* Locate the indices of the non-real numbers in this vector. Hint: use the `which` function. Don't hesitate to use the documentation via `?which`.
+
+```{r}
+which(y == FALSE)
+```
+
+* Locate the indices of the infinite quantities in this vector. 
+
+```{r}
+which(is.infinite(x))
+```
+
+* Locate the indices of the min and max in this vector. Hint: use the `which.min` and `which.max` functions.
+
+```{r}
+which.min(x)
+which.max(x)
+which.min(y)
+which.max(y)
+```
+
+* Count the number of unique values in `x`.
+
+```{r}
+length(unique(x))
+length(unique(y))
+```
+
+* Cast `x` to a factor. Do the number of levels make sense?
+
+```{r}
+as.factor(x)
+```
+
+* Cast `x` to integers. What do we learn about R's infinity representation in the integer data type?
+
+```{r}
+as.integer(x[is.finite(x) & !is.nan(x)])
+```
+
+* Use `x` to create a new vector `y` containing only the real numbers in x.
+
+```{r}
+y <- x[is.finite(x) & !is.nan(x)]
+```
+
+* Use the left rectangle method to numerically integrate x^2 from 0 to 1 with rectangle width size 1e-6.
+
+```{r}
+sum(seq(from = 0, to = 1-1e-6, by = 1e-6)^2) * 1e-6
+
+```
+
+
+* Calculate the average of 100 realizations of standard Bernoullis in one line using the `sample` function.
+
+```{r}
+mean(sample(c(0,1), size = 1, replace=TRUE))
+```
+
+
+* Calculate the average of 500 realizations of Bernoullis with p = 0.9 in one line using the `sample` and `mean` functions.
+
+```{r}
+mean(sample(c(0, 1), size=500, replace=TRUE, prob= c(0.9,0.1)))
+```
+
+
+* Calculate the average of 1000 realizations of Bernoullis with p = 0.9 in one line using `rbinom`.
+
+```{r}
+mean(rbinom(1000, 1, c(0.9, 0.1)))
+```
+
+* In class we considered a variable `x_3` which measured "criminality". We imagined L = 4 levels "none", "infraction", "misdimeanor" and "felony". Create a variable `x_3` here with 100 random elements (equally probable). Create it as a nominal (i.e. unordered) factor.
+
+```{r}
+x_3 <- as.factor(sample(c("none", "infraction", "misdimeanor", "felony"), 100, replace=TRUE))
+```
+
+* Use `x_3` to create `x_3_bin`, a binary feature where 0 is no crime and 1 is any crime.
+
+```{r}
+x_3_bin <- x_3 != "none"
+```
+
+* Use `x_3` to create `x_3_ord`, an ordered factor variable. Ensure the proper ordinal ordering.
+
+```{r}
+x_3_ord <- as.factor(x_3)
+lv <- c("none", "infraction", "misdimeanor", "felony")
+
+x_3_ord <- factor(x_3, levels=lv, ordered=TRUE)
+x_3_ord
+```
+
+* Convert this variable into three binary variables without any information loss and put them into a data matrix.
+
+```{r}
+
+a <- as.numeric(x_3_ord == "infraction")
+b <- as.numeric(x_3_ord == "misdimeanor")
+c <- as.numeric(x_3_ord == "felony")
+z = c(a, b ,c)
+z <- matrix(z, nrow=100, ncol=3)
+
+head(z)
+```
+
+
+* What should the sum of each row be (in English)? 
+
+Take a row and add each element of column and append it to a matrix global variable. 
+
+Verify that. 
+
+
+```{r}
+
+sums1 = matrix(NA, nrow = 1, ncol=nrow(z))
+
+for (i in 1:nrow(z)) {
+
+  sum1 <- 0
+  
+  #For each column index do sum
+  for (j in 1:ncol(z)) {
+    
+    sum1 <- sum1 + z[i, j]
+    
+  }
+  
+  sums1[1,i] <- sum1
+  
+}
+
+#sums1
+
+
+#or
+
+sums1 <- rowSums(z)
+sums1
+
+```
+
+* How should the column sum look (in English)? 
+
+Take a column and add each element of row and append it to a matrix global variable. 
+
+Verify that.
+
+```{r}
+
+sums1 = matrix(NA, nrow = 1, ncol=3)
+
+for (j in 1:3) {
+
+  sum1 <- 0
+  
+  #For each row index do sum
+  for (i in 1:nrow(z)) {
+    
+    sum1 <- sum1 + z[i, j]
+    
+  }
+  
+  sums1[1,j] <- sum1
+}
+
+#sums1
+
+
+
+#or
+
+colSums(z)
+
+```
+
+* Generate a matrix with 100 rows where the first column is realization from a normal with mean 17 and variance 38, the second column is uniform between -10 and 10, the third column is poisson with mean 6, the fourth column in exponential with lambda of 9, the fifth column is binomial with n = 20 and p = 0.12 and the sixth column is a binary variable with exactly 24% 1's dispersed randomly. Name the rows the entries of the `fake_first_names` vector.
+
+```{r}
+fake_first_names = c(
+  "Sophia", "Emma", "Olivia", "Ava", "Mia", "Isabella", "Riley", 
+  "Aria", "Zoe", "Charlotte", "Lily", "Layla", "Amelia", "Emily", 
+  "Madelyn", "Aubrey", "Adalyn", "Madison", "Chloe", "Harper", 
+  "Abigail", "Aaliyah", "Avery", "Evelyn", "Kaylee", "Ella", "Ellie", 
+  "Scarlett", "Arianna", "Hailey", "Nora", "Addison", "Brooklyn", 
+  "Hannah", "Mila", "Leah", "Elizabeth", "Sarah", "Eliana", "Mackenzie", 
+  "Peyton", "Maria", "Grace", "Adeline", "Elena", "Anna", "Victoria", 
+  "Camilla", "Lillian", "Natalie", "Jackson", "Aiden", "Lucas", 
+  "Liam", "Noah", "Ethan", "Mason", "Caden", "Oliver", "Elijah", 
+  "Grayson", "Jacob", "Michael", "Benjamin", "Carter", "James", 
+  "Jayden", "Logan", "Alexander", "Caleb", "Ryan", "Luke", "Daniel", 
+  "Jack", "William", "Owen", "Gabriel", "Matthew", "Connor", "Jayce", 
+  "Isaac", "Sebastian", "Henry", "Muhammad", "Cameron", "Wyatt", 
+  "Dylan", "Nathan", "Nicholas", "Julian", "Eli", "Levi", "Isaiah", 
+  "Landon", "David", "Christian", "Andrew", "Brayden", "John", 
+  "Lincoln"
+)
+
+a <-  rnorm(100, mean=17, sqrt(38))
+b <-  runif(100, -10, 10)
+c <-  rpois(100, 6)
+d <-  rexp(100, 9)
+e <-  rbinom(100, 20, prob=.12)
+f <-  sample(c(0,1), 100, replace=TRUE, prob = c(1-.24, .24))
+
+
+z <- matrix(c(a,b,c,d,e,f), nrow=100, ncol=6, byrow=FALSE)
+
+rownames(z) <- fake_first_names
+
+head(z)
+
+```
+
+* Create a data frame of the same data as above except make the binary variable a factor "DOMESTIC" vs "FOREIGN" for 0 and 1 respectively. Use RStudio's `View` function to ensure this worked as desired.
+
+```{r}
+
+z1 <- data.frame(z)
+
+for (i in 1 : nrow(z1)) {
+  for(j in 1: ncol(z1)) {
+    if (j == 6) {
+      if (z1[i,j] == 1) z1[i,j] <- "FOREIGN"
+      else z1[i,j] <- "DOMESTIC"
+    }
+  }
+}
+
+View(z1)
+
+```
+
+* Print out a table of the binary variable. Then print out the proportions of "DOMESTIC" vs "FOREIGN".
+
+```{r}
+
+table(z[, ncol(z1)])
+
+table(z1[, ncol(z1)])/nrow(z1)
+
+```
+
+Print out a summary of the whole dataframe.
+
+```{r}
+
+summary(z1)
+
+```
+
+* Let `n = 50`. Create a n x n matrix `R` of exactly 50% entries 0's, 25% 1's 25% 2's. These values should be in random locations.
+
+```{r}
+n <- 50
+
+z <- c(rep(0, n * n / 2), rep (1, n * n / 4), rep(2, n * n / 4))
+z <- sample(z)
+R <- matrix(z,nrow = n, ncol = n)
+
+head(R)
+```
+
+* Randomly punch holes (i.e. `NA`) values in this matrix so that an each entry is missing with probability 30%.
+
+```{r}
+
+for (i in 1:n) {
+  for (j in 1:n) {
+      if (runif(1) <= .30) {
+        R[i,j] <- NA
+      }
+    }
+}
+
+head(R)
+
+```
+
+* Sort the rows in matrix `R` by the largest row sum to lowest. Be careful about the NA's!
+
+```{r}
+
+z <- order(rowSums(R, na.rm = TRUE), decreasing = TRUE)
+z
+
+```
+
+* We will now learn the `apply` function. This is a handy function that saves writing for loops which should be eschewed in R. Use the apply function to compute a vector whose entries are the standard deviation of each row. Use the apply function to compute a vector whose entries are the standard deviation of each column. Be careful about the NA's! This should be one line.
+
+```{r}
+
+rows = apply(R, 1, sd, na.rm=TRUE)
+rows2 = apply(R, 2, sd, na.rm=TRUE)
+
+head(rows)
+head(rows2)
+
+```
+
+* Use the `apply` function to compute a vector whose entries are the count of entries that are 1 or 2 in each column. This should be one line.
+
+```{r}
+
+apply(R > 0, 2, sum, na.rm=TRUE)
+
+```
+
+* Use the `split` function to create a list whose keys are the column number and values are the vector of the columns. Look at the last example in the documentation `?split`.
+
+```{r}
+
+a <- split(R, col(R))
+head(a)
+
+```
+
+* In one statement, use the `lapply` function to create a list whose keys are the column number and values are themselves a list with keys: "min" whose value is the minimum of the column, "max" whose value is the maximum of the column, "pct_missing" is the proportion of missingness in the column and "first_NA" whose value is the row number of the first time the NA appears.
+
+```{r}
+
+func <- function(a) {
+#  as.list( #concatenation is a list
+    c(min = min(a, na.rm = TRUE),
+    max = max(a, na.rm = TRUE),
+    pct_missing = mean(is.na(a)),
+    first_NA = which.min(is.na(a))
+#    )
+  )
+}
+
+a <-lapply(split(R, col(R)), func)
+head(a)
+
+```
+
+* Set a seed and then create a vector `v` consisting of a sample of 1,000 iid normal realizations with mean -10 and variance 100.
+
+```{r}
+set.seed(1)
+v <- rnorm(1000, -10, sqrt(100))
+
+head(v)
+```
+
+* Repeat this exercise by resetting the seed to ensure you obtain the same results.
+
+```{r}
+set.seed(1)
+v <- rnorm(1000, -10, sqrt(100))
+
+head(v)
+```
+
+* Find the average of `v` and the standard error of `v`.
+
+```{r}
+mean(v)
+
+sd(v)/sqrt(1000)
+```
+
+* Find the 5%ile of `v` and use the `qnorm` function to compute what it theoretically should be. Is the estimate about what is expected by theory?
+
+
+
+```{r}
+
+quantile(v, 0.05)
+qnorm(.05, mean(v), sd(v))
+
+```
+
+* What is the percentile of `v` that corresponds to the value 0? What should it be theoretically? Is the estimate about what is expected by theory?
+
+```{r}
+
+c <- ecdf(v)(0)
+c
+
+#Generated
+d <- pnorm(0, mean(v), sd(v))
+d
+
+#Theoretical
+d <- pnorm(0, -10, sqrt(100))
+d
+
+#All three values generated are similarly. Therefore yes it is expected because v was generated using a mean and standard diviation of -10 and standard deviation of 10.
+
+```
