@@ -1,0 +1,316 @@
+---
+title: "Lab 4"
+author: "Hubert Majewski"
+output: pdf_document
+date: "11:59PM March 11, 2021"
+---
+
+Load up the famous iris dataset. We are going to do a different prediction problem. Imagine the only input x is Species and you are trying to predict y which is Petal.Length. A reasonable prediction is the average petal length within each Species. Prove that this is the OLS model by fitting an appropriate `lm` and then using the predict function to verify.
+
+```{r}
+data(iris)
+
+
+Model <- lm (Petal.Length ~ Species, iris)
+
+mean(iris$Petal.Length[iris$Species == "setosa"])
+mean(iris$Petal.Length[iris$Species == "versicolor"])
+mean(iris$Petal.Length[iris$Species == "virginica"])
+
+?predict
+predict(Model, data.frame(Species = c("setosa")))
+predict(Model, data.frame(Species = c("versicolor")))
+predict(Model, data.frame(Species = c("virginica")))
+
+```
+
+Construct the design matrix with an intercept, $X$, without using `model.matrix`.
+
+```{r}
+
+X <- cbind(1, iris$Species == "versicolor", iris$Species == "virginica")
+
+head(X)
+
+```
+
+Find the hat matrix $H$ for this regression.
+
+```{r}
+
+H <- X %*% solve(t(X) %*% X) %*% t(X)
+
+Matrix::rankMatrix(H)
+
+```
+
+Verify this hat matrix is symmetric using the `expect_equal` function in the package `testthat`.
+
+```{r}
+
+pacman::p_load(testthat)
+
+expect_equal(H, t(H))
+
+```
+
+Verify this hat matrix is idempotent using the `expect_equal` function in the package `testthat`.
+
+```{r}
+
+pacman::p_load(testthat)
+
+expect_equal(H, H %*% H)
+
+```
+
+Using the `diag` function, find the trace of the hat matrix.
+
+```{r}
+?diag
+
+trace <- sum(diag(H)) 
+
+```
+
+It turns out the trace of a hat matrix is the same as its rank! But we don't have time to prove these interesting and useful facts..
+
+For masters students: create a matrix $X_\perp$.
+
+```{r}
+#Masters Only
+```
+
+Using the hat matrix, compute the $\hat{y}$ vector and using the projection onto the residual space, compute the $e$ vector and verify they are orthogonal to each other.
+
+```{r}
+y <- iris$Petal.Length
+y_hat <- H %*% y
+
+e <- (diag(nrow(iris)) - H) %*% y
+
+head(y_hat)
+
+head(e)
+
+#Orthogonal if approaches 0
+expect_equal(t(e) %*% y_hat, as.matrix(0))
+
+```
+
+Compute SST, SSR and SSE and $R^2$ and then show that SST = SSR + SSE.
+
+```{r}
+y_bar <- mean(y)
+
+SSE <- t(e) %*% e
+SST <- t(y - y_bar) %*% (y - y_bar)
+
+Rsq <- 1 - SSE / SST
+Rsq
+
+SSR <- t(y_hat - y_bar) %*% (y_hat - y_bar)
+SSR
+
+expect_equal(SSR + SSE, SST)
+```
+
+Find the angle $\theta$ between $y$ - $\bar{y}1$ and $\hat{y} - \bar{y}1$ and then verify that its cosine squared is the same as the $R^2$ from the previous problem.
+
+```{r}
+
+theta <- acos( t(y - y_bar) %*% (y_hat - y_bar) / sqrt(SST * SSR) )
+theta
+theta * 180 / pi
+
+cos(theta) ^ 2
+expect_equal(cos(theta)^2, Rsq)
+```
+
+Project the $y$ vector onto each column of the $X$ matrix and test if the sum of these projections is the same as yhat.
+
+```{r}
+
+proj1 <- ((X[, 1] %*% t(X[, 1])) / as.numeric((t(X[, 1]) %*% X[, 1]))) %*% y
+proj2 <- ((X[, 2] %*% t(X[, 2])) / as.numeric((t(X[, 2]) %*% X[, 2]))) %*% y
+proj3 <- ((X[, 3] %*% t(X[, 3])) / as.numeric((t(X[, 3]) %*% X[, 3]))) %*% y
+
+#Not orthogonal, therefore, not equal.
+#expect_equal(proj1 + proj2 + proj3, y_hat)
+```
+
+Construct the design matrix without an intercept, $X$, without using `model.matrix`.
+
+```{r}
+
+xOld <- X
+HOld <- H
+
+X <- cbind((iris$Species == "setosa"),
+					 as.numeric(iris$Species == "versicolor"),
+					 (iris$Species == "virginica"))
+
+y <- iris$Petal.Length
+
+head(X)
+
+```
+
+Find the OLS estimates using this design matrix. It should be the sample averages of the petal lengths within species.
+
+```{r}
+
+#Project matrix
+H <- X %*% solve(t(X) %*% X) %*% t(X)
+
+yHat <- H %*% y
+
+unique(yHat)
+
+
+mean(iris$Petal.Length[iris$Species == "setosa"])
+
+mean(iris$Petal.Length[iris$Species == "versicolor"])
+
+mean(iris$Petal.Length[iris$Species == "virginica"])
+```
+
+Verify the hat matrix constructed from this design matrix is the same as the hat matrix constructed from the design matrix with the intercept. (Fact: orthogonal projection matrices are unique).
+
+```{r}
+
+pacman::p_load(testthat)
+
+expect_equal(H, HOld)
+
+```
+
+Project the $y$ vector onto each column of the $X$ matrix and test if the sum of these projections is the same as yhat.
+
+```{r}
+
+Hy <- H %*% y
+
+expect_equal(Hy, yHat)
+
+```
+
+Convert this design matrix into $Q$, an orthonormal matrix.
+
+```{r}
+
+q <- qr(xOld)
+Q <- qr.Q(q)
+R <- qr.R(q)
+
+dim(Q)
+dim(R)
+
+Matrix::rankMatrix(Q)
+Matrix::rankMatrix(R)
+
+# Therefore it is orthonormal
+```
+
+Project the $y$ vector onto each column of the $Q$ matrix and test if the sum of these projections is the same as yhat.
+
+```{r}
+# Same as above question
+
+proj1 <- ((Q[, 1] %*% t(Q[, 1])) / as.numeric((t(Q[, 1]) %*% Q[, 1]))) %*% y
+proj2 <- ((Q[, 2] %*% t(Q[, 2])) / as.numeric((t(Q[, 2]) %*% Q[, 2]))) %*% y
+proj3 <- ((Q[, 3] %*% t(Q[, 3])) / as.numeric((t(Q[, 3]) %*% Q[, 3]))) %*% y
+
+# Equal therefore these projections are orthognal
+expect_equal(proj1 + proj2 + proj3, yHat)
+```
+
+Find the $p=3$ linear OLS estimates if $Q$ is used as the design matrix using the `lm` method. Is the OLS solution the same as the OLS solution for $X$?
+
+```{r}
+
+ModelX <- lm(y ~ xOld, iris)
+ModelX
+
+# Set intercept to 0
+ModelQ <- lm(Petal.Length ~ 0 + Q, iris)
+ModelQ
+
+```
+
+Use the predict function and ensure that the predicted values are the same for both linear models: the one created with $X$ as its design matrix and the one created with $Q$ as its design matrix.
+
+```{r}
+
+predict(ModelQ, data.frame(Q))
+				
+predict(ModelX, data.frame(xOld[1]))
+
+```
+
+Clear the workspace and load the boston housing data and extract $X$ and $y$. The dimensions are $n=506$ and $p=13$. Create a matrix that is $(p + 1) \times (p + 1)$ full of NA's. Label the columns the same columns as X. Do not label the rows. For the first row, find the OLS estimate of the $y$ regressed on the first column only and put that in the first entry. For the second row, find the OLS estimates of the $y$ regressed on the first and second columns of $X$ only and put them in the first and second entries. For the third row, find the OLS estimates of the $y$ regressed on the first, second and third columns of $X$ only and put them in the first, second and third entries, etc. For the last row, fill it with the full OLS estimates.
+
+```{r}
+
+#Clear
+rm(list=ls())
+
+#Import
+D <- MASS::Boston
+
+X <- as.matrix(cbind(1, D[, 1:13]))
+y <- as.matrix(D[, ncol(D)])
+
+#Output
+M <- matrix(data = NA, nrow = ncol(D), ncol = ncol(D))
+
+#Copy over column names from original data (not label rows)
+colnames(M) <- c(colnames(X))
+
+for (i in 1 : ncol(D)) {
+	
+  B <- array(data = NA, dim = ncol(D))
+  
+  XStar <- X[, 1:i]
+  XStar <- as.matrix(XStar) # Have to convert it as R doesnt seem to like Matricies
+  
+  B[1:i] <- solve(t(XStar) %*% XStar) %*% t(XStar) %*% D$medv
+  
+  M[i, ] <- B
+}
+
+head(M)
+```
+
+Why are the estimates changing from row to row as you add in more predictors?
+
+The collection of rows above represents a new model with a different set of features. We can see that as we add more features to each model (not represented by NA), the y intercept (1 column) will increase while the coefficients will be assigned appropriate weights for each attribute (for each additional feature). 
+
+Create a vector of length $p+1$ and compute the R^2 values for each of the above models. 
+
+```{r}
+
+R2s <- array(dim = ncol(D))
+yBar <- mean(y)
+SST <- sum((y - yBar) ^ 2)
+
+
+for(i in 1: nrow(R2s) ) {
+	
+  b <- as.matrix(c(M[i, 1:i], rep(0, nrow(M) - i)) )
+  
+  yHat <- X %*% b
+  SSR <- sum((yHat - yBar) ^ 2)
+  RSQ <- SSR / SST
+  
+  R2s[i] <- RSQ
+  
+}
+
+R2s
+
+```
+
+Is R^2 monotonically increasing? Why?
+
+We are continuously trying to fit for a better model with each additional attribute/feature. Therefore, for each feature we add in, it makes sense that the R^2 value is increasing as we are starting fit the data, therefore, increasing R^2 as it is monotonic in this case. (Features conform to data)
