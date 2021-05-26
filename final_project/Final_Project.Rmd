@@ -1,0 +1,286 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+
+Final Project Code by Hubert Majewski
+
+```{r}
+#Load required libraries
+pacman::p_load(data.table, R.utils, tidyverse, skimr, mlr, rpart, rpart.plot, missForest, randomForest, caret)
+
+#Turn off warnings for presentation
+options(warn = -1)
+
+#Set randomization seed to make deterministic
+set.seed(342)
+
+#Load in the raw data
+housing <- fread("https://raw.githubusercontent.com/kapelner/QC_MATH_342W_Spring_2021/master/writing_assignments/housing_data_2016_2017.csv")
+
+#Load it as a data.table object
+housing <- data.table(housing)
+
+#Summary of columns and table using skim
+skim(housing)
+```
+
+List-wise deletion attempt (if only it were this easy)
+```{r}
+#Immediate List-wise deletion 
+LWhousing <- na.omit(housing)
+
+rawCols <- ncol(LWhousing)
+rawTotal <- nrow(LWhousing)
+
+cat("Total LW columns", rawCols ,"\n", "Total LW tuples is", rawTotal, "\n")
+#It doesn't work so we need to first filter columns
+```
+
+Data Filtering
+```{r}
+#Remove attributes which are not related with the cost of housing
+housing2 <- housing %>%
+	select(-HITId, -HITTypeId, -AssignmentStatus, -Title, -Description, -AssignmentId, -AcceptTime, -SubmitTime, -URL, -url, -WorkerId, -date_of_sale, -Keywords, -model_type, -NumberOfSimilarHITs, -community_district_num, -LifetimeInSeconds, -AcceptTime, -ApprovalTime, -AutoApprovalTime, -RejectionTime, -RequesterFeedback, -Reward, -MaxAssignments, -RequesterAnnotation, -AssignmentDurationInSeconds, -AutoApprovalDelayInSeconds, -Expiration, -Last30DaysApprovalRate, -Last7DaysApprovalRate, -date_of_sale, -WorkTimeInSeconds, -model_type, -LifetimeApprovalRate, -parking_charges, -MaxAssignments, -CreationTime, -SubmitTime, -pct_tax_deductibl, -listing_price_to_nearest_1000, -num_floors_in_building) #%>% select(-garage_exists) # I disagree with this. May add value to the entire building/apartment if it is a part of it.
+
+
+#Convert costs to continuous as it can be anything in between
+housing2 <- housing2 %>% mutate(sale_price = as.numeric(str_remove_all(sale_price, "[$,]" )))
+housing2 <- housing2 %>% mutate(total_taxes = as.numeric(str_remove_all(total_taxes, "[$,]" )))
+housing2 <- housing2 %>% mutate(common_charges = as.numeric(str_remove_all(common_charges, "[$,]" )))
+housing2 <- housing2 %>% mutate(maintenance_cost = as.numeric(str_remove_all(maintenance_cost, "[$,]" )))
+
+#Convert address into zipcodes
+zip_codes <- gsub("[^0-9.-]", "", housing2$full_address_or_zip_code)
+housing2$zip_codes = str_sub(zip_codes, -5, -1)
+
+#Specific cases
+housing2$zip_codes[housing2$zip_codes == "1367."] <- "11367" #Specific cases where the initial zip code was malformed
+housing2$zip_codes[housing2$zip_codes == ".1136"] <- "11369"
+housing2$zip_codes[housing2$zip_codes == "1355."] <- "11355"
+
+#Factor all attributes that are categories
+housing2 <- housing2 %>%
+  mutate(zip_codes = as.factor(case_when(
+    zip_codes == "11361" | zip_codes == "11362" | zip_codes == "11363" | zip_codes == "11364" ~ "Northeast Queens", 
+    zip_codes == "11354" | zip_codes == "11355" | zip_codes == "11356" | zip_codes == "11357" | zip_codes == "11358" | zip_codes == "11359" | zip_codes == "11360" ~ "North Queens",
+    zip_codes == "11365" | zip_codes == "11366" | zip_codes == "11367" ~ "Central Queens",
+    zip_codes == "11412" | zip_codes == "11423" | zip_codes == "11432" | zip_codes == "11433" | zip_codes == "11434" | zip_codes == "11435" | zip_codes == "11436" ~ "Jamaica",
+    zip_codes == "11101" | zip_codes == "11102" | zip_codes == "11103" | zip_codes == "11104" | zip_codes == "11105" | zip_codes == "11106" ~ "Northwest Queens",
+    zip_codes == "11374" | zip_codes == "11375" | zip_codes == "11379" | zip_codes == "11385" ~ "West Central Queens",
+    zip_codes == "11004" | zip_codes == "11005" | zip_codes == "11411" | zip_codes == "11413" | zip_codes == "11422" | zip_codes == "11426" | zip_codes == "11427" | zip_codes == "11428" | zip_codes == "11429" ~ "Southeast Queens",
+    zip_codes == "11414" | zip_codes == "11415" | zip_codes == "11416" | zip_codes == "11417" | zip_codes == "11418" | zip_codes == "11419" | zip_codes == "11420"  | zip_codes == "11421" ~ "Southwest Queens",
+    zip_codes == "11368" | zip_codes == "11369" | zip_codes == "11370" | zip_codes == "11372" | zip_codes == "11373" | zip_codes == "11377" | zip_codes == "11378"  ~ "West Queens"
+           )))
+
+#Using website as city definition https://www.walkscore.com/methodology.shtml#:~:text=Walk%20Score%20measures%20the%20walkability%20of%20any%20address%20using%20a,miles)%20are%20given%20maximum%20points
+housing2$walk_score <- ordered(as.factor(case_when(housing2$walk_score < 25 ~ "Car-Dependent", 
+														housing2$walk_score >= 25 & housing2$walk_score < 50 ~ "Car-Mostly-Dependent", 
+														housing2$walk_score >= 50 & housing2$walk_score < 70 ~ "Somewhat Walkable", 
+														housing2$walk_score >= 70 & housing2$walk_score < 90 ~ "Very Walkable", 
+                            housing2$walk_score >= 90 ~ "Walker's Paradise")))
+
+#ordering the walk_score because it is that way
+housing2$walk_score <- ordered(housing2$walk_score, levels = c("Car-Dependent", "Car-Mostly-Dependent", "Somewhat Walkable", "Very Walkable", "Walker's Paradise"))
+
+housing2$approx_year_built <- as.integer(housing2$approx_year_built) 
+
+housing2 <- housing2 %>%
+  mutate(kitchen_type = as.factor(case_when(
+  	kitchen_type == "efficiency" | kitchen_type == "efficiency kitchene" | kitchen_type == "efficiency ktchen" | kitchen_type == "efficiency kitchen" | kitchen_type == "efficiemcy" ~ "efficiency",
+    kitchen_type == "Combo" | kitchen_type == "combo" ~ "combo",
+    kitchen_type == "eat in" | kitchen_type == "Eat In" | kitchen_type == "eatin" | kitchen_type == "Eat in" ~ "eat-in")))
+
+housing2$num_half_bathrooms <- ifelse(is.na(housing2$num_half_bathrooms), 0, housing2$num_half_bathrooms)
+
+housing2 <- housing2 %>%
+  mutate(cats_allowed = as.factor(ifelse(cats_allowed == "no", 0, 1)))
+
+housing2 <- housing2 %>%
+  mutate(dogs_allowed = as.factor(ifelse(dogs_allowed == "no", 0, 1)))
+
+housing2 <- housing2 %>%
+  mutate(garage_exists = as.factor(ifelse(is.na(garage_exists), 0, 1)))
+  
+housing2 <- housing2 %>% mutate(fuel_type = as.factor(ifelse(fuel_type == "Other" | fuel_type == "none", "other", fuel_type)))
+  
+housing2 <- housing2 %>% mutate(dining_room_type = as.factor(dining_room_type))
+
+housing2 <- housing2 %>% mutate(maintenance_cost = ifelse(coop_condo == "condo", replace(maintenance_cost, is.na(maintenance_cost), 0), maintenance_cost))
+
+housing2 <- housing2 %>% mutate(total_taxes = replace(total_taxes, is.na(total_taxes), 0 )) %>%
+												 mutate(common_charges = ifelse(coop_condo == "co-op", replace(common_charges, is.na(common_charges), 0), common_charges)) %>%
+												 mutate(condoCharges = ifelse(coop_condo == "condo", common_charges + (total_taxes / 12), 0))
+
+housing2 <- housing2 %>% select(-total_taxes, -common_charges, -full_address_or_zip_code)
+
+housing <- housing2 %>% mutate(coop_condo = as.factor(coop_condo))
+
+#Print cleaned
+skim(housing)
+head(housing)
+```
+
+Dealing with missingness
+```{r}
+#Record the nulls into their own columns
+M <- tibble::as_tibble(apply(is.na(housing), 2, as.numeric))
+colnames(M) = paste(colnames(housing), "_missing", sep = "")
+M <- tibble::as_tibble(t(unique(t(M))))
+m <- M %>% 
+  select_if(function(x){sum(x) > 0})
+
+housing2 <- cbind(M, housing)
+
+
+#Prep for missing forest
+housing2NA = housing2 %>%
+  filter(is.na(sale_price))
+housing2 = housing2 %>%
+  filter(!is.na(sale_price))
+
+#Split
+n = nrow(housing2)
+k = 5
+
+test_indices <- sample(1 : n, 1 / k * n)
+train_indices <- setdiff(1 : n, test_indices)
+
+training <- housing2[train_indices, ]
+testing <- housing2[test_indices, ]
+
+XTest <- testing %>%
+  mutate(sale_price = NA)
+yTest <- testing$sale_price
+
+#Print a summary of the data before imputation
+summary(housing2)
+skim(housing2)
+
+#Fill in missingness
+housing3 <- missForest(rbind(training, XTest, housing2NA))$ximp
+```
+
+```{r}
+#Remove origional y that was missing for modeling
+housing3 <- housing3 %>% filter(sale_price_missing == 0) %>%
+	select(-sale_price_missing)
+
+#Remove origional zipcodes that was missing (about 1 tuple?)
+#housing3 <- housing3 %>% filter(zip_codes_missing == 0) %>%
+#	select(-zip_codes_missing)
+
+#Compute imputed costs on tuple
+housing3 <- housing3 %>%
+  mutate(total_cost = maintenance_cost + condoCharges) %>%
+  select(-maintenance_cost, -condoCharges)
+
+#Retain linear independence
+#Note: REMOVES NUMERIC AND FACTORS FROM TABLE AND SETS THEM AS CHARACTERS DUE TO COL COMPARISONS
+housing3 <- cbind(housing3[, -(1:11)], tibble::as_tibble(t(unique(t(housing3[, (1:11)])))))
+#housing3 <- housing3[, qr(housing3)$pivot[seq_len(qr(housing3)$rank)]]
+#housing3 <- cbind(housing3[, -(1:ncol(housing3))], tbl_df(t(unique(t(housing3[, (1:ncol(housing3))])))))
+#housing3 <- sapply(1:ncol(housing3), function (x) qr(housing3[,-x])$rank)
+#which(rankifremoved == max(rankifremoved))
+
+#Reinsert the yTest into the testing dataset
+train <- housing3[1:as.integer(n - as.integer(1 / k * n)), ]
+test <- housing3[(as.integer(n - as.integer(1 / k * n)) + 1):n, ]
+test$sale_price <- yTest
+
+#Print filled
+skim(housing3)
+head(housing3)
+
+```
+
+Regression Tree Model
+```{r}
+#Create one Regression Tree (anova -> regression)
+rtModel <- rpart(train$sale_price ~ ., data = train %>% select(-sale_price), method = "anova", control = list(cp = 0, xval = 10))
+
+png("Regression_Tree_Model_Plot.png",width = 5888, height = 3312, res = 250)
+rpart.plot(rtModel, tweak = 1.235, fallen.leaves = TRUE, type = 5, faclen = 2, digits = 3)
+dev.off()
+#plotcp(rtModel)
+rtModel
+
+#RMSE IS
+predictions <- rtModel %>% predict(train %>% select(-sale_price))
+RMSE(predictions, train$sale_price)
+R2(predictions, train$sale_price)
+
+```
+
+Linear Model
+```{r}
+#Creating one linear model with intercept
+lmModel = lm(train$sale_price ~ ., train %>% select(-sale_price))
+lmModel
+
+#in-sample stats to report
+lmModelSum <- summary(lmModel)
+lmModelSum
+
+#RMSE IS
+predictions <- lmModel %>% predict(train %>% select(-sale_price))
+RMSE(predictions, train$sale_price)
+R2(predictions, train$sale_price)
+
+#RMSE OOS
+predictions <- lmModel %>% predict(test %>% select(-sale_price))
+RMSE(predictions, test$sale_price)
+R2(predictions, test$sale_price)
+```
+
+Hyperparameter Tuning for random forest
+```{r}
+#Random Forest MLR
+housing_Xcomplete <- train %>% select(-sale_price)
+y_salesprice <- train$sale_price
+
+data = cbind(y_salesprice, housing_Xcomplete)
+colnames(data)[1] = "sales_price"
+
+task = makeRegrTask(data = data, target = "sales_price")
+
+parms = makeParamSet(
+	#Must have atleast 1 of everthing. Mtry cannot be larger than the number of columns present
+  makeIntegerParam("mtry", lower = 1, upper = ncol(housing_Xcomplete)),
+  makeIntegerParam("ntree", lower = 1, upper = 1000),
+  makeIntegerParam("nodesize", lower = 1, upper = 1000)
+)
+
+desc <- makeResampleDesc("Bootstrap", iters = 30)
+
+ctrl <- makeTuneControlRandom(maxit = 30)
+
+mlr_ret <- tuneParams("regr.randomForest", task = task, resampling = desc, par.set = parms, control = ctrl, measures = list(rmse))
+
+#Optimal hyperparameter result
+mlr_ret$x
+```
+
+RandomForest Model
+```{r}
+#Model
+rfModel = randomForest(housing_Xcomplete, y_salesprice, mtry = as.integer(mlr_ret$x[1]), num_trees = as.integer(mlr_ret$x[2]), nodesize = as.integer(mlr_ret$x[3]))
+rfModel
+
+yhat = predict(rfModel,  train %>% select(-sale_price))
+is_rmse = sqrt(mean((train$sale_price - yhat)^2))
+is_rsq = 1 - sum((train$sale_price - yhat)^2)/sum((train$sale_price - mean(y_salesprice))^2)
+is_rmse
+is_rsq
+
+
+#Compute errors using model of entire dataset
+#Once this is evaluated, there is no going back, otherwise it is cheating!
+#Run and submit, there is no going back.
+yhat = predict(rfModel,  test %>% select(-sale_price))
+oos_rmse = sqrt(mean((test$sale_price - yhat)^2))
+oos_rsq = 1 - sum((test$sale_price - yhat)^2)/sum((test$sale_price - mean(y_salesprice))^2)
+oos_rmse
+oos_rsq
+```
